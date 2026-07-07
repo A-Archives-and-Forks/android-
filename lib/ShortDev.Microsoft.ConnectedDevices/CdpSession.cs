@@ -101,7 +101,7 @@ public sealed class CdpSession : IDisposable
         CdpSocket socket,
         CommonHeader header, in TMessageHeader messageHeader, in TMessage message,
         bool supplyRequestId = false
-    ) where TMessageHeader : IBinaryWritable where TMessage : IBinaryWritable
+    ) where TMessageHeader : IBinaryWritable<TMessageHeader> where TMessage : IBinaryWritable<TMessage>
     {
         SendMessage(socket, ref header, messageHeader, message, supplyRequestId: supplyRequestId);
     }
@@ -111,9 +111,9 @@ public sealed class CdpSession : IDisposable
         CdpSocket socket,
         ref CommonHeader header, in TMessageHeader messageHeader, in TMessage message,
         bool supplyRequestId = false
-    ) where TMessageHeader : IBinaryWritable where TMessage : IBinaryWritable
+    ) where TMessageHeader : IBinaryWritable<TMessageHeader> where TMessage : IBinaryWritable<TMessage>
     {
-        var bufferSize = EndianWriter.CalcBinarySize(messageHeader) + EndianWriter.CalcBinarySize(message);
+        var bufferSize = messageHeader.MinimumSize + message.MinimumSize;
         var writer = EndianWriter.Create(Endianness.BigEndian, ConnectedDevicesPlatform.MemoryPool, initialCapacity: (int)bufferSize);
         try
         {
@@ -196,8 +196,8 @@ public sealed class CdpSession : IDisposable
         {
             try
             {
-                var app = _channelHandler.GetChannelById(header.ChannelId).App ?? throw new InvalidOperationException($"No app for channel {header.ChannelId}");
-                app.HandleMessage(msg);
+                var channel = _channelHandler.GetChannelById(header.ChannelId) ?? throw new InvalidOperationException($"No app for channel {header.ChannelId}");
+                channel.HandleMessage(msg);
             }
             finally
             {
@@ -207,16 +207,16 @@ public sealed class CdpSession : IDisposable
     }
     #endregion
 
-    public Task<CdpChannel> StartClientChannelAsync<TApp>(TApp handler, CancellationToken cancellationToken = default) where TApp : CdpAppBase, ICdpAppId
-        => StartClientChannelAsync(TApp.Id, TApp.Name, handler, cancellationToken);
+    public Task<CdpChannel> StartClientChannelAsync<TApp>(CancellationToken cancellationToken = default) where TApp : ICdpAppId
+        => StartClientChannelAsync(TApp.Id, TApp.Name, cancellationToken);
 
-    public async Task<CdpChannel> StartClientChannelAsync(string appId, string appName, CdpAppBase handler, CancellationToken cancellationToken = default)
+    public async Task<CdpChannel> StartClientChannelAsync(string appId, string appName, CancellationToken cancellationToken = default)
     {
         if (_channelHandler is not ClientChannelHandler clientChannelHandler)
             throw new InvalidOperationException("Session is not a client");
 
         var socket = await Platform.CreateSocketAsync(_connectHandler.UpgradeHandler.RemoteEndpoint, cancellationToken).ConfigureAwait(false);
-        return await clientChannelHandler.CreateChannelAsync(appId, appName, handler, socket, cancellationToken).ConfigureAwait(false);
+        return await clientChannelHandler.CreateChannelAsync(appId, appName, socket, cancellationToken).ConfigureAwait(false);
     }
 
     #region Utils
