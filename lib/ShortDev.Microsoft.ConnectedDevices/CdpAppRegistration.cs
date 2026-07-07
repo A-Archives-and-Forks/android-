@@ -1,4 +1,5 @@
 ﻿using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 
 namespace ShortDev.Microsoft.ConnectedDevices;
 
@@ -16,6 +17,9 @@ public static class CdpAppRegistration
     private readonly record struct AppId(string Id, string Name, CdpAppFactory<CdpAppBase> Factory);
 
     private static readonly ConcurrentDictionary<string, AppId> _registration = new(StringComparer.OrdinalIgnoreCase);
+
+    public static void RegisterApp<TApp>() where TApp : CdpAppBase, ICdpAppFactory<TApp>, ICdpAppId
+        => RegisterApp(TApp.Id, TApp.Name, TApp.Create);
 
     public static void RegisterApp<TApp>(CdpAppFactory<TApp> factory) where TApp : CdpAppBase, ICdpAppId
         => RegisterApp(TApp.Id, TApp.Name, factory);
@@ -39,4 +43,25 @@ public static class CdpAppRegistration
 
         return _registration[id].Factory(channel);
     }
+
+    internal static bool TryGetAppFactory(string id, string name, [MaybeNullWhen(false)] out CdpAppFactory<CdpAppBase> factory)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(id);
+        ArgumentException.ThrowIfNullOrEmpty(name);
+
+        if (!_registration.TryGetValue(id, out var appId))
+        {
+            factory = null;
+            return false;
+        }
+
+        factory = appId.Factory;
+        return true;
+    }
+}
+
+public interface ICdpAppFactory<out TApp>
+    where TApp : CdpAppBase
+{
+    static abstract TApp Create(CdpChannel channel);
 }
